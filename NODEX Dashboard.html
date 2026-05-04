@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NODEX — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; width: 100%; }
+  body {
+    background: #0A0A0A;
+    background-image: radial-gradient(ellipse 80% 60% at 0% 100%, #7B122618, transparent), radial-gradient(ellipse 60% 40% at 100% 0%, #7B122612, transparent);
+    color: #F0EDE8;
+    font-family: 'Syne', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+  /* Confetti canvas */
+  #confetti-canvas {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+  }
+</style>
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div id="root"></div>
+
+<script type="text/babel">
+
+
+
+
+
+
+
+
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ─── CONSTANTS ─────────────────────────────── */
+const WINE = '#7B1226';
+const WINE_LIGHT = '#9E1A33';
+const BG = '#0A0A0A';
+const BG2 = '#111111';
+const BG3 = '#181818';
+const BORDER = '#242424';
+const TEXT = '#F0EDE8';
+const MUTED = '#888';
+
+const GOALS = [1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000];
+
+const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+const fmtShort = (n) => {
+  if (n >= 1e6) return `R$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `R$${(n / 1e3).toFixed(0)}k`;
+  return fmt(n);
+};
+
+/* ─── LOCAL STORAGE ─────────────────────────── */
+const load = (key, def) => {try {const v = localStorage.getItem(key);return v ? JSON.parse(v) : def;} catch {return def;}};
+const save = (key, val) => {try {localStorage.setItem(key, JSON.stringify(val));} catch {}};
+
+/* ─── CONFETTI ──────────────────────────────── */
+function launchConfetti() {
+  const canvas = document.getElementById('confetti-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const pieces = Array.from({ length: 160 }, () => ({
+    x: Math.random() * canvas.width,
+    y: -20 - Math.random() * 200,
+    w: 6 + Math.random() * 8,
+    h: 10 + Math.random() * 6,
+    r: Math.random() * Math.PI * 2,
+    rv: (Math.random() - 0.5) * 0.15,
+    vx: (Math.random() - 0.5) * 3,
+    vy: 2 + Math.random() * 4,
+    color: ['#7B1226', '#C8294A', '#F0EDE8', '#FFD700', '#FF6B6B', '#9E1A33'][Math.floor(Math.random() * 6)],
+    alpha: 1
+  }));
+  let frame = 0;
+  const tick = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pieces.forEach((p) => {
+      p.x += p.vx;p.y += p.vy;p.r += p.rv;p.vy += 0.04;
+      if (frame > 120) p.alpha -= 0.01;
+      ctx.save();ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.translate(p.x, p.y);ctx.rotate(p.r);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    frame++;
+    if (frame < 220 && pieces.some((p) => p.alpha > 0)) requestAnimationFrame(tick);else
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+  requestAnimationFrame(tick);
+}
+
+/* ─── ICONS (inline SVG) ────────────────────── */
+const Icon = ({ name, size = 18, color = 'currentColor' }) => {
+  const icons = {
+    dashboard: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
+    services: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>,
+    cash: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>,
+    logout: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>,
+    plus: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
+    edit: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>,
+    trash: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>,
+    close: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+    trophy: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2z" /></svg>,
+    arrow_up: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>,
+    arrow_down: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>,
+    check: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>,
+    eye: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>,
+    eye_off: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+  };
+  return icons[name] || null;
+};
+
+/* ─── SHARED UI ─────────────────────────────── */
+const btnBase = {
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  border: 'none', cursor: 'pointer', fontFamily: 'Syne, sans-serif',
+  fontWeight: 600, fontSize: 13, letterSpacing: '0.04em',
+  borderRadius: 8, transition: 'all 0.18s ease'
+};
+
+const Modal = ({ title, onClose, children, wide }) =>
+<div style={{
+  position: 'fixed', inset: 0, zIndex: 1000,
+  background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+}} onClick={onClose}>
+    <div style={{
+    background: BG3, border: `1px solid ${BORDER}`,
+    borderRadius: 16, padding: 'clamp(20px,4vw,32px)', width: '100%', maxWidth: wide ? 560 : 480,
+    maxHeight: '90vh', overflowY: 'auto',
+    boxShadow: '0 32px 64px rgba(0,0,0,0.6)'
+  }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+        <span style={{ fontSize: 18, fontWeight: 700 }}>{title}</span>
+        <button onClick={onClose} style={{ ...btnBase, background: 'transparent', color: MUTED, padding: 4 }}><Icon name="close" size={16} /></button>
+      </div>
+      {children}
+    </div>
+  </div>;
+
+
+const Field = ({ label, children }) =>
+<div style={{ marginBottom: 18 }}>
+    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: MUTED, textTransform: 'uppercase', marginBottom: 8 }}>{label}</label>
+    {children}
+  </div>;
+
+
+const inputStyle = {
+  width: '100%', background: BG2, border: `1px solid ${BORDER}`,
+  borderRadius: 8, padding: '10px 14px', color: TEXT,
+  fontFamily: 'Syne, sans-serif', fontSize: 14, outline: 'none',
+  transition: 'border-color 0.15s'
+};
+
+const selectStyle = { ...inputStyle, cursor: 'pointer', appearance: 'none' };
+
+const Btn = ({ children, onClick, variant = 'primary', small, fullWidth, disabled, type = 'button' }) => {
+  const styles = {
+    primary: { background: WINE, color: TEXT, padding: small ? '8px 16px' : '11px 22px' },
+    ghost: { background: 'transparent', color: MUTED, border: `1px solid ${BORDER}`, padding: small ? '7px 15px' : '10px 21px' },
+    danger: { background: '#1a0a0a', color: '#e05050', border: '1px solid #3a1818', padding: small ? '7px 15px' : '10px 21px' }
+  };
+  return (
+    <button type={type} onClick={onClick} disabled={disabled} style={{
+      ...btnBase, ...styles[variant], width: fullWidth ? '100%' : undefined,
+      opacity: disabled ? 0.5 : 1
+    }}>{children}</button>);
+
+};
+
+const STATUS_COLORS = {
+  'A fazer': '#4A90D9',
+  'Em andamento': '#F5A623',
+  'Concluído': '#4CAF82',
+  'Cancelado': '#888'
+};
+
+const StatusBadge = ({ status }) =>
+<span style={{
+  display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+  fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
+  background: STATUS_COLORS[status] + '22',
+  color: STATUS_COLORS[status],
+  border: `1px solid ${STATUS_COLORS[status]}44`
+}}>{status}</span>;
+
+
+/* ─── SHADER BACKGROUND ─────────────────────── */
+function ShaderBackground() {
+  const containerRef = useRef(null);
+  useEffect(() => {
+    if (!containerRef.current || !window.THREE) return;
+    const THREE = window.THREE;
+    const container = containerRef.current;
+
+    const vertexShader = `void main() { gl_Position = vec4(position, 1.0); }`;
+    const fragmentShader = `
+      #define TWO_PI 6.2831853072
+      precision highp float;
+      uniform vec2 resolution;
+      uniform float time;
+      void main(void) {
+        vec2 uv = (gl_FragCoord.xy * 2.0 - resolution.xy) / min(resolution.x, resolution.y);
+        float t = time * 0.04;
+        float lw = 0.0025;
+        float r = 0.0; float g = 0.0; float b = 0.0;
+        for(int i = 0; i < 6; i++){
+          float fi = float(i);
+          r += lw * fi * fi / abs(fract(t - 0.008*fi)*6.0 - length(uv) + mod(uv.x+uv.y, 0.22));
+          g += lw * 0.3 / abs(fract(t - 0.01 + 0.009*fi)*5.5 - length(uv) + mod(uv.x-uv.y, 0.18));
+          b += lw * 0.15 / abs(fract(t + 0.012*fi)*6.5 - length(uv) + mod(uv.x*uv.y, 0.2));
+        }
+        // Wine-tinted: boost red, suppress green/blue
+        gl_FragColor = vec4(r * 1.2, g * 0.15, b * 0.1, 1.0);
+      }
+    `;
+
+    const camera = new THREE.Camera();
+    camera.position.z = 1;
+    const scene = new THREE.Scene();
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const uniforms = {
+      time: { value: 1.0 },
+      resolution: { value: new THREE.Vector2() }
+    };
+    const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
+    scene.add(new THREE.Mesh(geometry, material));
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    let animId;
+    const resize = () => {
+      const w = container.clientWidth,h = container.clientHeight;
+      renderer.setSize(w, h);
+      uniforms.resolution.value.set(renderer.domElement.width, renderer.domElement.height);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const animate = () => {
+      animId = requestAnimationFrame(animate);
+      uniforms.time.value += 0.05;
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      renderer.dispose();geometry.dispose();material.dispose();
+    };
+  }, []);
+
+  return <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />;
+}
+
+/* ─── LOGIN ─────────────────────────────────── */
+function Login({ onLogin }) {
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setTimeout(() => {
+      if (user === 'admin' && pass === 'nodex123') {
+        onLogin();
+      } else {
+        setErr('Credenciais inválidas. Tente novamente.');
+        setLoading(false);
+      }
+    }, 600);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, position: 'relative', overflow: 'hidden' }}>
+
+      {/* Shader animation background */}
+      <ShaderBackground />
+
+      {/* Dark overlay so card is readable */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'rgba(10,10,10,0.55)' }} />
+
+      {/* Centered login card */}
+      <div style={{ width: '100%', maxWidth: 420, padding: '0 24px', position: 'relative', zIndex: 10 }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            <span style={{ color: TEXT }}>NODE</span><span style={{ color: WINE }}>X</span>
+          </div>
+          <div style={{ color: MUTED, fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', marginTop: 8 }}>AGÊNCIA DE MARKETING DIGITAL</div>
+        </div>
+
+        <div style={{
+          background: 'rgba(18,18,18,0.92)', border: `1px solid ${BORDER}`,
+          borderRadius: 20, padding: 36,
+          boxShadow: `0 40px 80px rgba(0,0,0,0.7), 0 0 0 1px ${WINE}33`,
+          backdropFilter: 'blur(16px)'
+        }}>
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Entrar</div>
+          <div style={{ color: MUTED, fontSize: 13, marginBottom: 32 }}>Acesse o painel de controle</div>
+
+          <form onSubmit={submit}>
+            <Field label="Usuário">
+              <input value={user} onChange={(e) => {setUser(e.target.value);setErr('');}}
+              placeholder="admin" style={inputStyle}
+              onFocus={(e) => e.target.style.borderColor = WINE}
+              onBlur={(e) => e.target.style.borderColor = BORDER} />
+            </Field>
+            <Field label="Senha">
+              <div style={{ position: 'relative' }}>
+                <input type={showPass ? 'text' : 'password'}
+                value={pass} onChange={(e) => {setPass(e.target.value);setErr('');}}
+                placeholder="••••••••" style={{ ...inputStyle, paddingRight: 44 }}
+                onFocus={(e) => e.target.style.borderColor = WINE}
+                onBlur={(e) => e.target.style.borderColor = BORDER} />
+                <button type="button" onClick={() => setShowPass(!showPass)} style={{
+                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: MUTED, display: 'flex'
+                }}>
+                  <Icon name={showPass ? 'eye_off' : 'eye'} size={16} />
+                </button>
+              </div>
+            </Field>
+
+            {err &&
+            <div style={{ background: '#1a0a0a', border: '1px solid #3a1818', borderRadius: 8, padding: '10px 14px', color: '#e05050', fontSize: 13, marginBottom: 20 }}>
+                {err}
+              </div>
+            }
+
+            <button type="submit" disabled={loading} style={{
+              ...btnBase, background: WINE, color: TEXT,
+              width: '100%', justifyContent: 'center', padding: '13px',
+              fontSize: 14, marginTop: 8,
+              boxShadow: `0 8px 24px ${WINE}66`
+            }}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>);
+
+}
+
+/* ─── GOAL BAR ──────────────────────────────── */
+function GoalBar({ total, isMobile }) {
+  const currentGoalIdx = GOALS.findIndex((g) => total < g);
+  const isMaxed = currentGoalIdx === -1;
+  const nextGoal = isMaxed ? GOALS[GOALS.length - 1] : GOALS[currentGoalIdx];
+  const prevGoal = currentGoalIdx <= 0 ? 0 : GOALS[currentGoalIdx - 1];
+  const progress = isMaxed ? 100 : Math.min(100, (total - prevGoal) / (nextGoal - prevGoal) * 100);
+
+  return (
+    <div style={{
+      background: BG3, border: `1px solid ${BORDER}`,
+      borderRadius: 12, padding: '14px 20px',
+      display: 'flex', alignItems: 'center', gap: 16,
+      width: isMobile ? '100%' : undefined, minWidth: isMobile ? 0 : 320
+    }}>
+      <Icon name="trophy" size={18} color={WINE} />
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: MUTED, marginBottom: 6, letterSpacing: '0.04em' }}>
+          <span>META</span>
+          <span style={{ color: TEXT, fontWeight: 600, fontFamily: "sans-serif" }}>{fmtShort(nextGoal)}</span>
+        </div>
+        <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', borderRadius: 3,
+            background: `linear-gradient(90deg, ${WINE}, ${WINE_LIGHT})`,
+            width: `${progress}%`, transition: 'width 0.8s ease',
+            boxShadow: `0 0 8px ${WINE}88`
+          }} />
+        </div>
+        <div style={{ fontSize: 11, color: MUTED, marginTop: 4, fontFamily: "sans-serif" }}>
+          {fmt(total)} <span style={{ color: WINE }}>↑</span> {fmtShort(nextGoal)}
+        </div>
+      </div>
+    </div>);
+
+}
+
+/* ─── METRIC CARD ───────────────────────────── */
+function MetricCard({ label, value, sub, accent }) {
+  return (
+    <div style={{
+      background: BG3, border: `1px solid ${BORDER}`,
+      borderRadius: 14, padding: '22px 24px', flex: 1, minWidth: 160,
+      position: 'relative', overflow: 'hidden'
+    }}>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+        background: accent || WINE, borderRadius: '14px 14px 0 0'
+      }} />
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', color: MUTED, textTransform: 'uppercase', marginBottom: 12 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: TEXT, fontFamily: "Arial" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{sub}</div>}
+    </div>);
+
+}
+
+/* ─── REVENUE CHART ─────────────────────────── */
+function RevenueChart({ services, cashEntries, dateFrom, dateTo, isMobile }) {
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+  const [granularity, setGranularity] = useState('day');
+
+  const data = useMemo(() => {
+    const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : new Date('2020-01-01');
+    const to = dateTo ? new Date(dateTo + 'T23:59:59') : new Date('2099-01-01');
+
+    const filtered = services.
+    filter((s) => s.status === 'Concluído' && s.date).
+    filter((s) => {const d = new Date(s.date + 'T00:00:00');return d >= from && d <= to;});
+
+    const getKey = (dateStr) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      if (granularity === 'day') return dateStr;
+      if (granularity === 'week') {
+        const day = d.getDay();const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const mon = new Date(d);mon.setDate(diff);
+        return mon.toISOString().slice(0, 10);
+      }
+      return dateStr.slice(0, 7);
+    };
+
+    const map = {};
+    filtered.forEach((s) => {
+      const k = getKey(s.date);
+      map[k] = (map[k] || 0) + s.value;
+    });
+
+    const keys = Object.keys(map).sort();
+    const labels = keys.map((k) => {
+      if (granularity === 'month') {
+        const [y, m] = k.split('-');
+        return new Date(+y, +m - 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+      }
+      if (granularity === 'week') return `Sem. ${new Date(k + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`;
+      return new Date(k + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    });
+
+    return { labels, values: keys.map((k) => map[k]) };
+  }, [services, dateFrom, dateTo, granularity]);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (chartInstance.current) chartInstance.current.destroy();
+
+    chartInstance.current = new Chart(chartRef.current, {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          label: 'Faturamento',
+          data: data.values,
+          borderColor: WINE,
+          borderWidth: 2.5,
+          pointBackgroundColor: WINE,
+          pointBorderColor: '#0A0A0A',
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          fill: true,
+          backgroundColor: function (ctx) {
+            const chart = ctx.chart;
+            const { ctx: c, chartArea } = chart;
+            if (!chartArea) return WINE + '00';
+            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, WINE + '55');
+            gradient.addColorStop(1, WINE + '00');
+            return gradient;
+          },
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: BG3,
+            borderColor: BORDER, borderWidth: 1,
+            titleColor: MUTED, bodyColor: TEXT,
+            callbacks: { label: (ctx) => fmt(ctx.raw) }
+          }
+        },
+        scales: {
+          x: { grid: { color: BORDER }, ticks: { color: MUTED, font: { family: 'Syne' } } },
+          y: { grid: { color: BORDER + '88' }, ticks: { color: MUTED, font: { family: 'Syne' }, callback: (v) => fmtShort(v) } }
+        }
+      }
+    });
+  }, [data]);
+
+  const granOpts = [{ v: 'day', l: 'Dia' }, { v: 'week', l: 'Semana' }, { v: 'month', l: 'Mês' }];
+
+  return (
+    <div style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 28, marginTop: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>Faturamento</div>
+        <div style={{ display: 'flex', gap: 4, background: BG2, borderRadius: 8, padding: 3 }}>
+          {granOpts.map((o) =>
+          <button key={o.v} onClick={() => setGranularity(o.v)} style={{
+            ...btnBase, background: granularity === o.v ? WINE : 'transparent',
+            color: granularity === o.v ? TEXT : MUTED, padding: '6px 14px', fontSize: 12
+          }}>{o.l}</button>
+          )}
+        </div>
+      </div>
+      <div style={{ height: 260 }}>
+        {data.labels.length === 0 ?
+        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTED, fontSize: 13 }}>Sem dados para exibir</div> :
+        <canvas ref={chartRef} />
+        }
+      </div>
+    </div>);
+
+}
+
+/* ─── DASHBOARD SECTION ─────────────────────── */
+function DashboardSection({ services, cashEntries, isMobile }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState(today);
+  const [toast, setToast] = useState(null);
+  const prevGoalRef = useRef(load('nodex_last_goal', -1));
+
+  const totalBruto = services.reduce((s, x) => s + x.value, 0);
+
+  useEffect(() => {
+    const currentGoalIdx = GOALS.findIndex((g) => totalBruto < g);
+    const achieved = currentGoalIdx <= 0 ? 0 : GOALS[currentGoalIdx - 1];
+    const prev = prevGoalRef.current;
+    if (achieved > prev && achieved > 0) {
+      save('nodex_last_goal', achieved);
+      prevGoalRef.current = achieved;
+      setTimeout(() => {
+        launchConfetti();
+        setToast({ msg: `🎉 Meta de ${fmtShort(achieved)} atingida!`, sub: 'Parabéns pelo crescimento!' });
+        setTimeout(() => setToast(null), 4000);
+      }, 300);
+    }
+  }, [totalBruto]);
+
+  const inRange = (s) => {
+    if (!s.date) return true;
+    const d = new Date(s.date + 'T00:00:00');
+    if (dateFrom && d < new Date(dateFrom + 'T00:00:00')) return false;
+    if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
+    return true;
+  };
+
+  const filteredSvcs = services.filter(inRange);
+
+  const bruto = filteredSvcs.reduce((s, x) => s + x.value, 0);
+
+  const inRangeCash = (c) => {
+    if (!c.date) return true;
+    const d = new Date(c.date + 'T00:00:00');
+    if (dateFrom && d < new Date(dateFrom + 'T00:00:00')) return false;
+    if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
+    return true;
+  };
+
+  const filteredCash = cashEntries.filter(inRangeCash);
+  const despesas = filteredCash.filter((c) => c.type === 'Saída').reduce((s, x) => s + x.value, 0);
+  const liquido = bruto - despesas;
+  const entradas = filteredCash.filter((c) => c.type === 'Entrada').reduce((s, x) => s + x.value, 0);
+  const lucro = entradas - despesas;
+
+  const concluidos = filteredSvcs.filter((s) => s.status === 'Concluído').length;
+  const pendentes = filteredSvcs.filter((s) => s.status === 'Em andamento').length;
+  const afazer = filteredSvcs.filter((s) => s.status === 'A fazer').length;
+
+  return (
+    <div>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: 16, marginBottom: 28 }}>
+        <div>
+          <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, letterSpacing: '-0.02em' }}>Dashboard</div>
+          <div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>Visão geral do negócio</div>
+        </div>
+        <GoalBar total={totalBruto} isMobile={isMobile} />
+      </div>
+
+      {/* Date filter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: MUTED, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Período:</span>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+        style={{ ...inputStyle, width: isMobile ? '100%' : 160, flex: isMobile ? '1 1 140px' : undefined }}
+        onFocus={(e) => e.target.style.borderColor = WINE}
+        onBlur={(e) => e.target.style.borderColor = BORDER} />
+        <span style={{ color: MUTED }}>→</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+        style={{ ...inputStyle, width: isMobile ? '100%' : 160, flex: isMobile ? '1 1 140px' : undefined }}
+        onFocus={(e) => e.target.style.borderColor = WINE}
+        onBlur={(e) => e.target.style.borderColor = BORDER} />
+        {(dateFrom || dateTo !== today) &&
+        <Btn variant="ghost" small onClick={() => {setDateFrom('');setDateTo(today);}}>Limpar</Btn>
+        }
+      </div>
+
+      {/* Metric cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: 12, marginBottom: 0 }}>
+        <MetricCard label="Faturamento Bruto" value={fmt(bruto)} sub="Serviços no período" accent={WINE} />
+        <MetricCard label="Faturamento Líquido" value={fmt(liquido)} sub="Bruto - despesas" accent="#4A90D9" />
+        <MetricCard label="Lucro" value={fmt(lucro)} sub="Entradas - saídas" accent="#4CAF82" />
+        <MetricCard label="Concluídos" value={concluidos} sub="Serviços" accent="#4CAF82" />
+        <MetricCard label="Em Andamento" value={pendentes} sub="Serviços" accent="#F5A623" />
+        <MetricCard label="A Fazer" value={afazer} sub="Serviços" accent="#4A90D9" />
+      </div>
+
+      <RevenueChart services={services} cashEntries={cashEntries} dateFrom={dateFrom} dateTo={dateTo} isMobile={isMobile} />
+
+      {/* Toast */}
+      {toast &&
+      <div style={{
+        position: 'fixed', bottom: 24, right: isMobile ? 16 : 32, left: isMobile ? 16 : 'auto', zIndex: 9000,
+        background: BG3, border: `1px solid ${WINE}66`,
+        borderRadius: 14, padding: '18px 28px',
+        boxShadow: `0 24px 48px rgba(0,0,0,0.7), 0 0 0 1px ${WINE}33`,
+        animation: 'slideUp 0.3s ease'
+      }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{toast.msg}</div>
+          <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>{toast.sub}</div>
+        </div>
+      }
+    </div>);
+
+}
+
+/* ─── SERVICES SECTION ──────────────────────── */
+function ServicesSection({ services, setServices, isMobile }) {
+  const [modal, setModal] = useState(null); // null | 'new' | {id}
+  const [form, setForm] = useState({ empresa: '', descricao: '', value: '', status: 'A fazer', date: '' });
+  const [search, setSearch] = useState('');
+
+  const openNew = () => {
+    setForm({ empresa: '', descricao: '', value: '', status: 'A fazer', date: new Date().toISOString().slice(0, 10) });
+    setModal('new');
+  };
+
+  const openEdit = (s) => {
+    setForm({ empresa: s.empresa, descricao: s.descricao, value: String(s.value), status: s.status, date: s.date || '' });
+    setModal(s.id);
+  };
+
+  const save_ = () => {
+    if (!form.empresa.trim() || !form.value) return;
+    const newSvc = {
+      id: modal === 'new' ? Date.now() : modal,
+      empresa: form.empresa.trim(),
+      descricao: form.descricao.trim(),
+      value: parseFloat(form.value) || 0,
+      status: form.status,
+      date: form.date
+    };
+    setServices(modal === 'new' ?
+    [newSvc, ...services] :
+    services.map((s) => s.id === modal ? newSvc : s)
+    );
+    setModal(null);
+  };
+
+  const del = (id) => {if (confirm('Excluir serviço?')) setServices(services.filter((s) => s.id !== id));};
+
+  const filtered = services.filter((s) =>
+  !search || s.empresa.toLowerCase().includes(search.toLowerCase()) || s.descricao.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: 12, marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, letterSpacing: '-0.02em' }}>Serviços</div>
+          <div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>{services.length} serviços cadastrados</div>
+        </div>
+        <Btn onClick={openNew}><Icon name="plus" size={14} /> Novo Serviço</Btn>
+      </div>
+
+      <input
+        placeholder="Buscar empresa ou descrição..."
+        value={search} onChange={(e) => setSearch(e.target.value)}
+        style={{ ...inputStyle, maxWidth: 340, marginBottom: 20 }}
+        onFocus={(e) => e.target.style.borderColor = WINE}
+        onBlur={(e) => e.target.style.borderColor = BORDER} />
+      
+
+      <div style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+              {['Empresa', 'Descrição', 'Valor', 'Status', 'Data', ''].map((h) =>
+              <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: MUTED, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 &&
+            <tr><td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: MUTED, fontSize: 14 }}>Nenhum serviço encontrado</td></tr>
+            }
+            {filtered.map((s, i) =>
+            <tr key={s.id} style={{ borderBottom: `1px solid ${BORDER}88`, transition: 'background 0.15s', background: "transparent" }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#ffffff06'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              
+                <td style={{ padding: '14px 20px', fontWeight: 600, fontSize: 14 }}>{s.empresa}</td>
+                <td style={{ padding: '14px 20px', color: MUTED, fontSize: 13, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.descricao || '—'}</td>
+                <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 600, color: '#4CAF82', fontFamily: "Arial" }}>{fmt(s.value)}</td>
+                <td style={{ padding: '14px 20px' }}><StatusBadge status={s.status} /></td>
+                <td style={{ padding: '14px 20px', color: MUTED, fontSize: 13, fontFamily: "Arial" }}>{s.date ? new Date(s.date + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                <td style={{ padding: '14px 20px' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => openEdit(s)} style={{ ...btnBase, background: 'transparent', color: MUTED, padding: '6px 8px', border: `1px solid ${BORDER}`, borderRadius: 6 }}>
+                      <Icon name="edit" size={13} />
+                    </button>
+                    <button onClick={() => del(s.id)} style={{ ...btnBase, background: 'transparent', color: '#e05050', padding: '6px 8px', border: '1px solid #3a1818', borderRadius: 6 }}>
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal &&
+      <Modal title={modal === 'new' ? 'Novo Serviço' : 'Editar Serviço'} onClose={() => setModal(null)}>
+          <Field label="Empresa (Cliente)">
+            <input value={form.empresa} onChange={(e) => setForm({ ...form, empresa: e.target.value })}
+          placeholder="Nome da empresa" style={inputStyle}
+          onFocus={(e) => e.target.style.borderColor = WINE}
+          onBlur={(e) => e.target.style.borderColor = BORDER} />
+          
+          </Field>
+          <Field label="Descrição">
+            <textarea value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+          placeholder="Descreva o serviço" rows={3}
+          style={{ ...inputStyle, resize: 'vertical', minHeight: 80, border: "1px solid rgb(36, 36, 36)", fontFamily: "Arial" }}
+          onFocus={(e) => e.target.style.borderColor = WINE}
+          onBlur={(e) => e.target.style.borderColor = BORDER} />
+          
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Valor (R$)">
+              <input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })}
+            placeholder="0,00" style={inputStyle}
+            onFocus={(e) => e.target.style.borderColor = WINE}
+            onBlur={(e) => e.target.style.borderColor = BORDER} />
+            
+            </Field>
+            <Field label="Data">
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={inputStyle}
+            onFocus={(e) => e.target.style.borderColor = WINE}
+            onBlur={(e) => e.target.style.borderColor = BORDER} />
+            
+            </Field>
+          </div>
+          <Field label="Status">
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...selectStyle, border: "1px solid rgb(36, 36, 36)", fontFamily: "Arial" }}
+          onFocus={(e) => e.target.style.borderColor = WINE}
+          onBlur={(e) => e.target.style.borderColor = BORDER}>
+            
+              {['A fazer', 'Em andamento', 'Concluído', 'Cancelado'].map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+            <Btn variant="ghost" onClick={() => setModal(null)}>Cancelar</Btn>
+            <Btn onClick={save_} disabled={!form.empresa.trim() || !form.value}>
+              <Icon name="check" size={14} /> Salvar
+            </Btn>
+          </div>
+        </Modal>
+      }
+    </div>);
+
+}
+
+/* ─── CASH SECTION ──────────────────────────── */
+function CashSection({ cashEntries, setCashEntries, isMobile }) {
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({ type: 'Entrada', descricao: '', value: '', date: '' });
+
+  const saldo = cashEntries.reduce((s, c) => c.type === 'Entrada' ? s + c.value : s - c.value, 0);
+
+  const openNew = () => {
+    setForm({ type: 'Entrada', descricao: '', value: '', date: new Date().toISOString().slice(0, 10) });
+    setModal('new');
+  };
+
+  const openEdit = (c) => {
+    setForm({ type: c.type, descricao: c.descricao, value: String(c.value), date: c.date || '' });
+    setModal(c.id);
+  };
+
+  const save_ = () => {
+    if (!form.descricao.trim() || !form.value) return;
+    const newEntry = {
+      id: modal === 'new' ? Date.now() : modal,
+      type: form.type,
+      descricao: form.descricao.trim(),
+      value: parseFloat(form.value) || 0,
+      date: form.date
+    };
+    setCashEntries(modal === 'new' ?
+    [newEntry, ...cashEntries] :
+    cashEntries.map((c) => c.id === modal ? newEntry : c)
+    );
+    setModal(null);
+  };
+
+  const del = (id) => {if (confirm('Excluir movimentação?')) setCashEntries(cashEntries.filter((c) => c.id !== id));};
+
+  const totalEntradas = cashEntries.filter((c) => c.type === 'Entrada').reduce((s, c) => s + c.value, 0);
+  const totalSaidas = cashEntries.filter((c) => c.type === 'Saída').reduce((s, c) => s + c.value, 0);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: 12, marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, letterSpacing: '-0.02em' }}>Gestão de Caixa</div>
+          <div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>Controle financeiro</div>
+        </div>
+        <Btn onClick={openNew}><Icon name="plus" size={14} /> Nova Movimentação</Btn>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 16, marginBottom: 24 }}>
+        <div style={{ flex: 1, minWidth: 180, background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '20px 24px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: saldo >= 0 ? '#4CAF82' : '#e05050', borderRadius: '14px 14px 0 0' }} />
+          <div style={{ fontSize: 11, color: MUTED, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>Saldo Atual</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: saldo >= 0 ? '#4CAF82' : '#e05050', letterSpacing: '-0.02em', fontFamily: "Arial" }}>{fmt(saldo)}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 180, background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '20px 24px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: '#4CAF82', borderRadius: '14px 14px 0 0' }} />
+          <div style={{ fontSize: 11, color: MUTED, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>Total Entradas</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#4CAF82', fontFamily: "Arial" }}>{fmt(totalEntradas)}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 180, background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '20px 24px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: '#e05050', borderRadius: '14px 14px 0 0' }} />
+          <div style={{ fontSize: 11, color: MUTED, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>Total Saídas</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#e05050', fontFamily: "Arial" }}>{fmt(totalSaidas)}</div>
+        </div>
+      </div>
+
+      <div style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 14, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+              {['Tipo', 'Descrição', 'Valor', 'Data', ''].map((h) =>
+              <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: MUTED, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {cashEntries.length === 0 &&
+            <tr><td colSpan={5} style={{ padding: '40px 20px', textAlign: 'center', color: MUTED, fontSize: 14 }}>Nenhuma movimentação cadastrada</td></tr>
+            }
+            {cashEntries.map((c) =>
+            <tr key={c.id} style={{ borderBottom: `1px solid ${BORDER}88`, transition: 'background 0.15s', background: "transparent" }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#ffffff06'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              
+                <td style={{ padding: '14px 20px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: c.type === 'Entrada' ? '#4CAF82' : '#e05050' }}>
+                    <Icon name={c.type === 'Entrada' ? 'arrow_up' : 'arrow_down'} size={13} color={c.type === 'Entrada' ? '#4CAF82' : '#e05050'} />
+                    {c.type}
+                  </span>
+                </td>
+                <td style={{ padding: '14px 20px', color: MUTED, fontSize: 13 }}>{c.descricao}</td>
+                <td style={{ padding: '14px 20px', fontWeight: 700, color: c.type === 'Entrada' ? '#4CAF82' : '#e05050', fontFamily: "Arial" }}>
+                  {c.type === 'Saída' ? '-' : '+'}{fmt(c.value)}
+                </td>
+                <td style={{ padding: '14px 20px', color: MUTED, fontSize: 13, fontFamily: "Arial" }}>{c.date ? new Date(c.date + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                <td style={{ padding: '14px 20px' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => openEdit(c)} style={{ ...btnBase, background: 'transparent', color: MUTED, padding: '6px 8px', border: `1px solid ${BORDER}`, borderRadius: 6 }}>
+                      <Icon name="edit" size={13} />
+                    </button>
+                    <button onClick={() => del(c.id)} style={{ ...btnBase, background: 'transparent', color: '#e05050', padding: '6px 8px', border: '1px solid #3a1818', borderRadius: 6 }}>
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal &&
+      <Modal title={modal === 'new' ? 'Nova Movimentação' : 'Editar Movimentação'} onClose={() => setModal(null)}>
+          <Field label="Tipo">
+            <div style={{ display: 'flex', gap: 10 }}>
+              {['Entrada', 'Saída'].map((t) =>
+            <button key={t} onClick={() => setForm({ ...form, type: t })} style={{
+              ...btnBase, flex: 1, justifyContent: 'center', padding: '10px',
+              background: form.type === t ? t === 'Entrada' ? '#4CAF8222' : '#e0505022' : 'transparent',
+              border: `1px solid ${form.type === t ? t === 'Entrada' ? '#4CAF82' : '#e05050' : BORDER}`,
+              color: form.type === t ? t === 'Entrada' ? '#4CAF82' : '#e05050' : MUTED
+            }}>
+                  <Icon name={t === 'Entrada' ? 'arrow_up' : 'arrow_down'} size={14} color={form.type === t ? t === 'Entrada' ? '#4CAF82' : '#e05050' : MUTED} />
+                  {t}
+                </button>
+            )}
+            </div>
+          </Field>
+          <Field label="Descrição">
+            <input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+          placeholder="Ex: Pagamento cliente, Aluguel..." style={{ ...inputStyle, border: "1px solid rgb(36, 36, 36)" }}
+          onFocus={(e) => e.target.style.borderColor = WINE}
+          onBlur={(e) => e.target.style.borderColor = BORDER} />
+          
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Valor (R$)">
+              <input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })}
+            placeholder="0,00" style={{ ...inputStyle, border: "1px solid rgb(36, 36, 36)" }}
+            onFocus={(e) => e.target.style.borderColor = WINE}
+            onBlur={(e) => e.target.style.borderColor = BORDER} />
+            
+            </Field>
+            <Field label="Data">
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={inputStyle}
+            onFocus={(e) => e.target.style.borderColor = WINE}
+            onBlur={(e) => e.target.style.borderColor = BORDER} />
+            
+            </Field>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+            <Btn variant="ghost" onClick={() => setModal(null)}>Cancelar</Btn>
+            <Btn onClick={save_} disabled={!form.descricao.trim() || !form.value}>
+              <Icon name="check" size={14} /> Salvar
+            </Btn>
+          </div>
+        </Modal>
+      }
+    </div>);
+
+}
+
+/* ─── RESPONSIVE HOOK ───────────────────────── */
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return mobile;
+}
+
+/* ─── HAMBURGER ICON ────────────────────────── */
+const HamburgerIcon = ({ open, size = 20, color = 'currentColor' }) => open ?
+<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg> :
+<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>;
+
+/* ─── COLLAPSE ICON ─────────────────────────── */
+const CollapseIcon = ({ collapsed }) =>
+<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    {collapsed ?
+  <><polyline points="9 18 15 12 9 6" /></> :
+  <><polyline points="15 18 9 12 15 6" /></>}
+  </svg>;
+
+
+/* ─── SIDEBAR ───────────────────────────────── */
+const NAV = [
+{ id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+{ id: 'services', label: 'Serviços', icon: 'services' },
+{ id: 'cash', label: 'Gestão de Caixa', icon: 'cash' }];
+
+
+function Sidebar({ active, setActive, onLogout, collapsed, setCollapsed, mobileOpen, setMobileOpen, isMobile, onExport, onImport }) {
+  const width = isMobile ? 240 : collapsed ? 64 : 240;
+  const visible = isMobile ? mobileOpen : true;
+
+  const handleNav = (id) => {
+    setActive(id);
+    if (isMobile) setMobileOpen(false);
+  };
+
+  return (
+    <>
+      {/* Mobile overlay backdrop */}
+      {isMobile && mobileOpen &&
+      <div onClick={() => setMobileOpen(false)} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+        zIndex: 99, backdropFilter: 'blur(2px)'
+      }} />
+      }
+
+      <div style={{
+        width, minHeight: '100vh', background: '#0D0D0D',
+        borderRight: `1px solid ${BORDER}`, display: 'flex',
+        flexDirection: 'column',
+        position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 100,
+        transform: isMobile ? mobileOpen ? 'translateX(0)' : 'translateX(-100%)' : 'translateX(0)',
+        transition: 'width 0.25s ease, transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+        overflow: 'hidden'
+      }}>
+        {/* Logo + collapse toggle */}
+        <div style={{
+          padding: collapsed && !isMobile ? '28px 0 24px' : '28px 24px 24px',
+          borderBottom: `1px solid ${BORDER}`,
+          display: 'flex', alignItems: 'center',
+          justifyContent: collapsed && !isMobile ? 'center' : 'space-between'
+        }}>
+          {(!collapsed || isMobile) &&
+          <div>
+              <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                <span style={{ color: TEXT }}>NODE</span><span style={{ color: WINE }}>X</span>
+              </div>
+              <div style={{ color: MUTED, letterSpacing: '0.18em', textTransform: 'uppercase', marginTop: 2, fontFamily: "Arial", fontSize: "7px" }}>AGÊNCIA DE MARKETING DIGITAL</div>
+            </div>
+          }
+          {collapsed && !isMobile &&
+          <div style={{ fontSize: 20, fontWeight: 800 }}>
+              <span style={{ color: TEXT }}>N</span><span style={{ color: WINE }}>X</span>
+            </div>
+          }
+          {!isMobile &&
+          <button onClick={() => setCollapsed(!collapsed)} style={{
+            ...btnBase, background: 'transparent', color: MUTED, padding: 6,
+            border: `1px solid ${BORDER}`, borderRadius: 7
+          }}>
+              <CollapseIcon collapsed={collapsed} />
+            </button>
+          }
+          {isMobile &&
+          <button onClick={() => setMobileOpen(false)} style={{
+            ...btnBase, background: 'transparent', color: MUTED, padding: 6,
+            border: `1px solid ${BORDER}`, borderRadius: 7
+          }}>
+              <HamburgerIcon open={true} size={16} color={MUTED} />
+            </button>
+          }
+        </div>
+
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: collapsed && !isMobile ? '16px 8px' : '16px 12px' }}>
+          {NAV.map((n) => {
+            const isActive = active === n.id;
+            return (
+              <button key={n.id} onClick={() => handleNav(n.id)} style={{
+                ...btnBase, width: '100%',
+                justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+                padding: collapsed && !isMobile ? '12px' : '11px 14px',
+                marginBottom: 4, borderRadius: 10, fontSize: 14,
+                background: isActive ? `${WINE}22` : 'transparent',
+                color: isActive ? TEXT : MUTED,
+                border: isActive ? `1px solid ${WINE}44` : '1px solid transparent',
+                position: 'relative'
+              }} title={collapsed && !isMobile ? n.label : undefined}>
+                {isActive && !collapsed &&
+                <div style={{ position: 'absolute', left: 0, top: '20%', bottom: '20%', width: 3, background: WINE, borderRadius: '0 2px 2px 0' }} />
+                }
+                <Icon name={n.icon} size={16} color={isActive ? WINE : MUTED} />
+                {(!collapsed || isMobile) && n.label}
+              </button>);
+
+          })}
+        </nav>
+
+        {/* Backup / Restore */}
+        <div style={{ padding: collapsed && !isMobile ? '12px 8px' : '12px 12px', borderTop: `1px solid ${BORDER}` }}>
+          {(!collapsed || isMobile) &&
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: MUTED, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>Dados</div>
+          }
+          <button onClick={onExport} style={{
+            ...btnBase, width: '100%',
+            justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+            padding: collapsed && !isMobile ? '10px' : '9px 14px',
+            marginBottom: 4, borderRadius: 10, fontSize: 13,
+            background: 'transparent', color: MUTED, border: '1px solid transparent'
+          }} title="Exportar dados">
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            {(!collapsed || isMobile) && 'Exportar dados'}
+          </button>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            width: '100%',
+            justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+            padding: collapsed && !isMobile ? '10px' : '9px 14px',
+            borderRadius: 10, fontSize: 13,
+            background: 'transparent', color: MUTED,
+            cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 600,
+            letterSpacing: '0.04em', boxSizing: 'border-box'
+          }} title="Importar dados">
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+            {(!collapsed || isMobile) && 'Importar dados'}
+            <input type="file" accept=".json" onChange={onImport} style={{ display: 'none' }} />
+          </label>
+        </div>
+
+        {/* Logout */}
+        <div style={{ padding: collapsed && !isMobile ? '16px 8px' : '16px 12px', borderTop: `1px solid ${BORDER}` }}>
+          <button onClick={onLogout} style={{
+            ...btnBase, width: '100%',
+            justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+            padding: collapsed && !isMobile ? '12px' : '11px 14px',
+            background: 'transparent', color: MUTED, border: '1px solid transparent',
+            borderRadius: 10, fontSize: 14
+          }} title={collapsed && !isMobile ? 'Sair' : undefined}>
+            <Icon name="logout" size={16} color={MUTED} />
+            {(!collapsed || isMobile) && 'Sair'}
+          </button>
+        </div>
+      </div>
+    </>);
+
+}
+
+/* ─── APP ───────────────────────────────────── */
+function App() {
+  const isMobile = useIsMobile();
+  const [authed, setAuthed] = useState(() => load('nodex_session', false));
+  const [active, setActive] = useState('dashboard');
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const [services, setServices_] = useState(() => load('nodex_services', [
+  { id: 1, empresa: 'Tech Solutions', descricao: 'Gestão de tráfego pago', value: 3500, status: 'Concluído', date: '2026-01-15' },
+  { id: 2, empresa: 'Bella Moda', descricao: 'Social media + criação de conteúdo', value: 3500, status: 'Em andamento', date: '2026-01-15' },
+  { id: 3, empresa: 'Construtora Prime', descricao: 'SEO + Google Ads', value: 3500, status: 'Concluído', date: '2026-01-15' },
+  { id: 4, empresa: 'Farmácia Popular', descricao: 'Meta Ads', value: 3500, status: 'A fazer', date: '2026-01-15' }]
+  ));
+  const [cashEntries, setCashEntries_] = useState(() => load('nodex_cash', [
+  { id: 1, type: 'Entrada', descricao: 'Recebimento Tech Solutions', value: 3500, date: '2026-01-16' },
+  { id: 2, type: 'Entrada', descricao: 'Recebimento Construtora Prime', value: 3500, date: '2026-01-16' },
+  { id: 3, type: 'Entrada', descricao: 'Ferramentas SaaS', value: 3500, date: '2026-01-16' },
+  { id: 4, type: 'Entrada', descricao: 'Imposto MEI', value: 3500, date: '2026-01-16' }]
+  ));
+
+  const setServices = (v) => {setServices_(v);save('nodex_services', v);};
+  const setCashEntries = (v) => {setCashEntries_(v);save('nodex_cash', v);};
+
+  const login = () => {save('nodex_session', true);setAuthed(true);};
+  const logout = () => {save('nodex_session', false);setAuthed(false);};
+
+  const sidebarWidth = isMobile ? 0 : collapsed ? 64 : 240;
+
+  if (!authed) return <Login onLogin={login} />;
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <Sidebar
+        active={active} setActive={setActive} onLogout={logout}
+        collapsed={collapsed} setCollapsed={setCollapsed}
+        mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}
+        isMobile={isMobile} />
+      
+
+      {/* Mobile top bar */}
+      {isMobile &&
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, height: 56, zIndex: 90,
+        background: '#0D0D0D', borderBottom: `1px solid ${BORDER}`,
+        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16
+      }}>
+          <button onClick={() => setMobileOpen(true)} style={{
+          ...btnBase, background: 'transparent', color: TEXT, padding: 8,
+          border: `1px solid ${BORDER}`, borderRadius: 8
+        }}>
+            <HamburgerIcon open={false} size={18} color={TEXT} />
+          </button>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>
+            <span style={{ color: TEXT }}>NODE</span><span style={{ color: WINE }}>X</span>
+          </div>
+        </div>
+      }
+
+      <main style={{
+        marginLeft: sidebarWidth,
+        flex: 1,
+        padding: isMobile ? '72px 16px 24px' : '40px 48px',
+        minHeight: '100vh',
+        background: 'transparent',
+        transition: 'margin-left 0.25s ease',
+        minWidth: 0
+      }}>
+        {active === 'dashboard' && <DashboardSection services={services} cashEntries={cashEntries} isMobile={isMobile} />}
+        {active === 'services' && <ServicesSection services={services} setServices={setServices} isMobile={isMobile} />}
+        {active === 'cash' && <CashSection cashEntries={cashEntries} setCashEntries={setCashEntries} isMobile={isMobile} />}
+      </main>
+    </div>);
+
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+
+<style>
+@keyframes spotlight {
+  0% { opacity: 0; transform: translate(-72%, -62%) skewX(-30deg) scale(0.9); }
+  100% { opacity: 1; transform: translate(-50%, -40%) skewX(-30deg) scale(1); }
+}
+.animate-spotlight {
+  animation: spotlight 2s ease forwards;
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+  cursor: pointer;
+}
+select option { background: #181818; color: #F0EDE8; }
+</style>
+</body>
+</html>
