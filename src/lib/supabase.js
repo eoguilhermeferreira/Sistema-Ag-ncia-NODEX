@@ -5,3 +5,6 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = url && key ? createClient(url, key) : null;
 export const isConfigured = !!supabase;
+
+if (isConfigured) console.log('[NODEX] Supabase conectado ✓');
+else console.warn('[NODEX] Supabase não configurado — usando localStorage');
